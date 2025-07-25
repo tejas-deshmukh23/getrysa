@@ -93,6 +93,22 @@
 			<artifactId>kalium</artifactId>
 			<version>0.8.0</version>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>commons-httpclient</groupId>
+			<artifactId>commons-httpclient</artifactId>
+			<version>3.1</version>
+		</dependency>
+		<dependency>
+    <groupId>com.amazonaws</groupId>
+    <artifactId>aws-java-sdk-s3</artifactId>
+    <version>1.12.678</version> <!-- ✅ Use the latest stable version -->
+</dependency>
+
+		
 	</dependencies>
 
 	<build>
@@ -100,6 +116,9 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+                <mainClass>com.lsp.web.LspApplication</mainClass> <!-- or the one you intend to use -->
+            </configuration>
 			</plugin>
 		</plugins>
 	</build>

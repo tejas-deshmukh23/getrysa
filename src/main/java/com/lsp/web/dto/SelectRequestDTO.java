@@ -10,6 +10,11 @@ public class SelectRequestDTO {
     private String formId;
     private String submissionId;
     private String status;
+    private String mobileNumber;
+    private Integer stage;
+    private String productName;//this is used to save the product name in apply record
+    private String loanAmount;//this is used to save the loan amount in userInfo table
+    
 	public String getTransactionId() {
 		return transactionId;
 	}
@@ -58,5 +63,29 @@ public class SelectRequestDTO {
 	public void setStatus(String status) {
 		this.status = status;
 	}
-
+	public String getMobileNumber() {
+		return mobileNumber;
+	}
+	public void setMobileNumber(String mobileNumber) {
+		this.mobileNumber = mobileNumber;
+	}
+	public Integer getStage() {
+		return stage;
+	}
+	public void setStage(Integer stage) {
+		this.stage = stage;
+	}
+	public String getProductName() {
+		return productName;
+	}
+	public void setProductName(String productName) {
+		this.productName = productName;
+	}
+	public String getLoanAmount() {
+		return loanAmount;
+	}
+	public void setLoanAmount(String loanAmount) {
+		this.loanAmount = loanAmount;
+	}
+	
 }

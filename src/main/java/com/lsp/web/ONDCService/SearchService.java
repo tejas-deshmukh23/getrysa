@@ -1,22 +1,40 @@
 package com.lsp.web.ONDCService;
 
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
 
+import org.hibernate.jpa.event.spi.CallbackRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lsp.web.Exception.UserInfoNotFoundException;
+import com.lsp.web.dto.ONDCFormDataDTO;
+import com.lsp.web.entity.Callback;
+import com.lsp.web.entity.JourneyLog;
+import com.lsp.web.entity.Logger;
+import com.lsp.web.entity.UserInfo;
+import com.lsp.web.repository.CallbackRepository;
+import com.lsp.web.repository.JourneyLogRepository;
+import com.lsp.web.repository.LoggerRepository;
+import com.lsp.web.repository.UserInfoRepository;
 
 import ondc.onboarding.utility.Utils;
 
@@ -25,6 +43,17 @@ import ondc.onboarding.utility.Utils;
 
 @Service
 public class SearchService {
+	
+	@Autowired
+	private CallbackRepository callbackRepository;
+	@Autowired
+    private SimpMessagingTemplate messagingTemplate;
+	@Autowired
+	private LoggerRepository loggerRepository;
+	@Autowired
+	private JourneyLogRepository journeyLogRepository;
+	@Autowired
+	private UserInfoRepository userInfoRepository;
 	
 	private final RestTemplate restTemplate;
 	public SearchService(RestTemplate restTemplate) {
@@ -48,9 +77,13 @@ public class SearchService {
 //    private static final String EXPIRES_ISO = "2026-10-20T18:00:15.071Z";
     //-----------------------------------------------------------------------------
     
-    public ResponseEntity<?> search() {
+    //we will be taking the mobileNumber in this so that we can load and save the UserInfo into journeyLog of the user who is doing this journey
+    public ResponseEntity<?> search(String transactionId, String mobileNumber, Integer stage) {
         try {
-            String transactionId = UUID.randomUUID().toString();
+        	
+        	System.out.println("The transaction id that we got in search : "+transactionId);
+        	
+//            String transactionId = UUID.randomUUID().toString();
             String messageId = UUID.randomUUID().toString();
             String timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_INSTANT);
 
@@ -125,6 +158,32 @@ public class SearchService {
             headers.set("Authorization", authorizationSignature);
 
             HttpEntity<String> request = new HttpEntity<>(objectMapper.writeValueAsString(requestBody), headers);
+            
+          //Load the userInfo to save the userInfo id into journeyLog
+            UserInfo userInfo;
+            Optional<UserInfo> optionalUserInfo = userInfoRepository.findByMobileNumber(mobileNumber);
+            if(optionalUserInfo.isEmpty()) {
+            	throw new UserInfoNotFoundException("UserInfo not found with mobileNumber : "+mobileNumber);
+            	
+            }
+            userInfo = optionalUserInfo.get();
+            
+          //logic to save the journey log
+            JourneyLog journeyLog = new JourneyLog();
+            journeyLog.setPlatformId("O");
+            journeyLog.setRequestId(gatewayUrl);
+            journeyLog.setStage(stage);
+            journeyLog.setUId(transactionId);
+            journeyLog.setUser(userInfo);
+            journeyLogRepository.save(journeyLog);
+            
+            //here we will save this api call in logger
+            Logger logger = new Logger();
+            logger.setJourneyLog(journeyLog);
+//            logger.setUrl(gatewayUrl);// this url doesnt refers the value of api url it holds the url if we get from response of that api
+            logger.setRequestPayload(String.valueOf(request));
+            
+            loggerRepository.save(logger);
 
             ResponseEntity<String> gatewayResponse = restTemplate.postForEntity(gatewayUrl, request, String.class);
 
@@ -133,13 +192,96 @@ public class SearchService {
             responseMap.put("message_id", messageId);
             responseMap.put("timestamp", timestamp);
             responseMap.put("gateway_response", objectMapper.readValue(gatewayResponse.getBody(), Object.class));
+            
+            
+            
+            //FormDataDTO
+            ONDCFormDataDTO ondcFormDataDTO = new ONDCFormDataDTO();
+            ondcFormDataDTO.setFirstName(userInfo.getFirstName());
+            ondcFormDataDTO.setLastName(userInfo.getLastName());
+            ondcFormDataDTO.setDob(userInfo.getDob());
+            
+            ondcFormDataDTO.setGender(userInfo.getGender()==1?"male":userInfo.getGender()==2?"female":"other");
+            ondcFormDataDTO.setPan(userInfo.getPan());
+            ondcFormDataDTO.setContactNumber(userInfo.getMobileNumber());
+            ondcFormDataDTO.setEmail(userInfo.getEmail());
+            ondcFormDataDTO.setOfficialemail(userInfo.getWorkEmail());
+            
+            if(userInfo.getEmploymentType()==1) {
+            	ondcFormDataDTO.setEmploymentType("Salaried");
+            }else if(userInfo.getEmploymentType() == 2) {
+            	ondcFormDataDTO.setEmploymentType("Self Employment");
+            }else if(userInfo.getEmploymentType() == 3) {
+            	ondcFormDataDTO.setEmploymentType("Self Employment");//as ondc form has only two fields salaried and self employed otherwise here would be Business
+            }
+            
+            ondcFormDataDTO.setEndUse("consumerDurablePurchase"); // if static
+            ondcFormDataDTO.setIncome(userInfo.getMonthlyIncome() != null ? userInfo.getMonthlyIncome().toString() : null);
+            ondcFormDataDTO.setCompanyName(userInfo.getCompanyName());
+            ondcFormDataDTO.setUdyamNumber("UDYAM-ABC123"); // static or from another source
+            ondcFormDataDTO.setAddressL1(userInfo.getAddress());
+            ondcFormDataDTO.setAddressL2(""); // Optional field
+            ondcFormDataDTO.setCity("Pune"); // Static or derive if available
+            ondcFormDataDTO.setState("Maharashtra"); // Same
+            ondcFormDataDTO.setPincode(userInfo.getResidentialPincode() != null ? userInfo.getResidentialPincode().toString() : null);
+            ondcFormDataDTO.setAa_id(userInfo.getMobileNumber() + "@finvu");
+            ondcFormDataDTO.setBureauConsent("on");
+            
+            //we will add this data in our responseMap to return it to frontend
+            responseMap.put("ONDCFormData", ondcFormDataDTO);
+
+            logger.setResponsePayload(String.valueOf(responseMap));
+            loggerRepository.save(logger);
 
             return ResponseEntity.ok(responseMap);
+            
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to send ONDC search", "details", e.getMessage()));
         }
+    }
+    
+    //code to store search callback
+    public ResponseEntity<?> onSearch(StringBuilder requestBody) throws JsonMappingException, JsonProcessingException{
+    	
+    	// Parse JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonNode jsonNode = objectMapper.readTree(requestBody.toString());
+
+        String transactionId = jsonNode.path("context").path("transaction_id").asText();
+        String messageId = jsonNode.path("context").path("message_id").asText();
+ 
+        System.out.println("Transaction ID: " + transactionId);
+        System.out.println("Message ID: " + messageId);
+        
+        Callback callback = new Callback();
+        callback.setuID(transactionId);
+        callback.setApiId(messageId);
+        callback.setContent(requestBody.toString());
+        callback.setApi("/on_search");
+        
+//        callback.setProduct("ONDC");
+        
+//        System.out.println("The transaction id is : "+transactionId);
+//        
+//          try {
+//        	  Thread.sleep(1500);
+//          }catch(InterruptedException e)
+//          {
+//        	  Thread.currentThread().interrupt();//Restore Interupt flag
+//        	  e.printStackTrace();
+//          }
+        
+     // Broadcast to frontend subscribers
+        messagingTemplate.convertAndSend("/topic/callbacks/"+transactionId, callback);
+        
+        
+        callbackRepository.save(callback);
+    	
+    	
+    	return null;
+    	
     }
 
 }

@@ -3,25 +3,55 @@ package com.lsp.web.ONDCService;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lsp.web.Exception.UserInfoNotFoundException;
+import com.lsp.web.entity.Apply;
+import com.lsp.web.entity.Callback;
+import com.lsp.web.entity.JourneyLog;
+import com.lsp.web.entity.Logger;
+import com.lsp.web.entity.UserInfo;
+import com.lsp.web.repository.ApplyRepository;
+import com.lsp.web.repository.CallbackRepository;
+import com.lsp.web.repository.JourneyLogRepository;
+import com.lsp.web.repository.LoggerRepository;
+import com.lsp.web.repository.UserInfoRepository;
 
 import ondc.onboarding.utility.Utils;
 
 @Service
 public class SelectService {
+	
+	@Autowired
+    private SimpMessagingTemplate messagingTemplate;
+	@Autowired
+	private CallbackRepository callbackRepository;
+	@Autowired
+	private LoggerRepository loggerRepository;
+	@Autowired
+	private JourneyLogRepository journeyLogRepository;
+	@Autowired
+	private UserInfoRepository userInfoRepository;
+	@Autowired
+	private ApplyRepository applyRepository;
 	
 	private final RestTemplate restTemplate;
 	public SelectService(RestTemplate restTemplate) {
@@ -40,8 +70,11 @@ public class SelectService {
 	    private static final String SUBSCRIBER_ID = "uat.credithaat.in";
 	    private static final String UNIQUE_KEY_ID = "642129cd-7856-4975-8496-d62cecd912b0";
 
+	    //here we need product name for saving the data in applyrecord with productname
 	public ResponseEntity<?> select(String transactionId, String bppId, String bppUri, String providerId, String itemId,
-			String formId, String submissionId, String status){
+			String formId, String submissionId, String status, String mobileNumber, Integer stage, String productName, String loanAmount){
+	
+		System.out.println("The status is :: "+status);
 		
 		String gatewayUrl = bppUri+"/select";
 		
@@ -80,7 +113,7 @@ public class SelectService {
                                             "xinput", Map.of(
                                                     "form", Map.of("id", formId),
                                                     "form_response", Map.of(
-                                                            "status", "SUCCESS",
+                                                            "status", status,
                                                             "submission_id", submissionId
                                                     )
                                             )
@@ -114,6 +147,35 @@ public class SelectService {
             headers.set("Authorization", authorizationSignature);
 
             HttpEntity<String> entity = new HttpEntity<>(objectMapper.writeValueAsString(requestBody), headers);
+            
+            //Code not related to api just for db storage-----------------------------
+            //Load the userInfo to save the userInfo id into journeyLog
+              UserInfo userInfo;
+              Optional<UserInfo> optionalUserInfo = userInfoRepository.findByMobileNumber(mobileNumber);
+              if(optionalUserInfo.isEmpty()) {
+              	throw new UserInfoNotFoundException("UserInfo not found with mobileNumber : "+mobileNumber);
+              	
+              }
+              userInfo = optionalUserInfo.get();
+
+              //logic to save the journey log
+              JourneyLog journeyLog = new JourneyLog();
+              journeyLog.setPlatformId("O");
+              journeyLog.setRequestId(gatewayUrl);
+              journeyLog.setStage(stage);
+              journeyLog.setUId(transactionId);
+              journeyLog.setUser(userInfo);
+              journeyLogRepository.save(journeyLog);
+              
+              //here we will save this api call in logger
+              Logger logger = new Logger();
+              logger.setJourneyLog(journeyLog);
+//              logger.setUrl(gatewayUrl);// this url doesnt refers the value of api url it holds the url if we get from response of that api
+              logger.setRequestPayload(String.valueOf(entity));
+//              logger.setResponsePayload(String.valueOf(responseMap));
+              loggerRepository.save(logger);
+              //------------------------------------------------------------------------
+
 
             ResponseEntity<String> response = restTemplate.postForEntity(gatewayUrl, entity, String.class);
 
@@ -122,13 +184,71 @@ public class SelectService {
             responseMap.put("transaction_id", transactionId);
             responseMap.put("message_id", messageId);
             responseMap.put("gateway_response", objectMapper.readValue(response.getBody(), Object.class));
-
+            
+            logger.setResponsePayload(String.valueOf(responseMap));
+            loggerRepository.save(logger);
+            
+            //here we will be writing the apply record if the stage is 2
+            if(stage == 2) {
+            	
+//            	update apply table
+            	Apply apply = null ;
+            	Optional<Apply> optionalApply = applyRepository.findByUserAndProductName(userInfo, productName);
+            	if(optionalApply.isEmpty()) {
+            		apply = new Apply();
+            		apply.setMobileNumber(mobileNumber);
+        			apply.setProductName(productName);
+            	}else if(optionalApply.isPresent()) { 
+            		apply = optionalApply.get();
+            	}
+    			apply.setStage(stage);//we will be fetching this stage from the journeyLog table and then we will be updating this stage here
+    			apply.setUser(userInfo);
+    			
+    			applyRepository.save(apply);
+    			
+    			//here we will update our userInfo table by saving the loanAmount into it
+    			userInfo.setLoanAmount(Float.parseFloat(loanAmount));
+    			userInfoRepository.save(userInfo);    			
+            }
+            
+            
+           
             return ResponseEntity.ok(responseMap);
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to send select", "details", e.getMessage()));
         }
+    }
+	
+	//code to store select callback
+    public ResponseEntity<?> onSelect(StringBuilder requestBody) throws JsonMappingException, JsonProcessingException{
+    	
+    	// Parse JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonNode jsonNode = objectMapper.readTree(requestBody.toString());
+
+        String transactionId = jsonNode.path("context").path("transaction_id").asText();
+        String messageId = jsonNode.path("context").path("message_id").asText();
+ 
+        System.out.println("Transaction ID: " + transactionId);
+        System.out.println("Message ID: " + messageId);
+        
+        Callback callback = new Callback();
+        callback.setuID(transactionId);
+        callback.setApiId(messageId);
+        callback.setContent(requestBody.toString());
+        callback.setApi("/on_select");
+//        callback.setProduct("ONDC");
+        
+     // Broadcast to frontend subscribers
+        messagingTemplate.convertAndSend("/topic/callbacks/select/"+transactionId, callback);
+        
+        callbackRepository.save(callback);
+    	
+    	
+    	return null;
+    	
     }
 
 }

@@ -12,11 +12,18 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.util.Date;
+import jakarta.persistence.Index;
 
 
-@Entity
+//@Entity
 //@Inheritance(strategy= InheritanceType.TABLE_PER_CLASS)
-@Table(name = "t_callback")
+//@Table(name = "t_callback")
+@Entity
+@Table(name = "t_callback", indexes = {
+    @Index(name = "idx_uid", columnList = "uID"),
+    @Index(name = "idx_apiid", columnList = "apiId"),
+    @Index(name = "idx_product_id", columnList = "product_id")
+})
 public class Callback extends BaseEntity {
 	
     @ManyToOne(targetEntity = Product.class,cascade={CascadeType.MERGE,CascadeType.PERSIST})
@@ -24,80 +31,57 @@ public class Callback extends BaseEntity {
     @JsonIgnore
     private Product product;
 
-    @Column(name = "clickid", length = 100)
-    private String clickid;
-
-    @Column(name = "phone", length = 20)
-    private String phone;
-
-    @Column(name = "click_time", columnDefinition="datetime NULL")
-    private Date clickTime;
-
-    @Column(name = "callback", columnDefinition="INT NOT NULL default 0")
-    private Integer callback;
-
-    @Column(name = "callback_content", length=1000)
-    private String callbackContent;
+    //we will store the transaction id and other apis unique id into this uid
+    private String uID;
     
-    @Column(name = "callback_location", length=500)
-    private String callbackLocation;
+    //we will store the message id for ondc into this
+    private String apiId;
 
-    public Product getProduct() {
-        return product;
-    }
-
-    public void setProduct(Product product) {
-        this.product = product;
-    }
-
-    public String getClickid() {
-        return clickid;
-    }
-
-    public void setClickid(String clickid) {
-        this.clickid = clickid;
-    }
-
-    public Date getClickTime() {
-        return clickTime;
-    }
-
-    public void setClickTime(Date clickTime) {
-        this.clickTime = clickTime;
-    }
-
-    public Integer getCallback() {
-        return callback;
-    }
-
-    public void setCallback(Integer callback) {
-        this.callback = callback;
-    }
-
-
-    public String getCallbackContent() {
-        return callbackContent;
-    }
-
-    public void setCallbackContent(String callbackContent) {
-        this.callbackContent = callbackContent;
-    }
-
-    public String getPhone() {
-        return phone;
-    }
-
-    public void setPhone(String phone) {
-        this.phone = phone;
-    }
+    @Column(name = "callback_content", columnDefinition = "TEXT")
+    private String content;
     
-    public String getCallbackLocation() {
-		return callbackLocation;
+    @Column(name = "callback_api", length=500)
+    private String api;
+
+	public Product getProduct() {
+		return product;
 	}
 
-	public void setCallbackLocation(String callbackLocation) {
-		this.callbackLocation = callbackLocation;
+	public void setProduct(Product product) {
+		this.product = product;
 	}
 
+	public String getuID() {
+		return uID;
+	}
+
+	public void setuID(String uID) {
+		this.uID = uID;
+	}
+
+	public String getApiId() {
+		return apiId;
+	}
+
+	public void setApiId(String apiId) {
+		this.apiId = apiId;
+	}
+
+	public String getContent() {
+		return content;
+	}
+
+	public void setContent(String content) {
+		this.content = content;
+	}
+
+	public String getApi() {
+		return api;
+	}
+
+	public void setApi(String api) {
+		this.api = api;
+	}
+    
 }
 

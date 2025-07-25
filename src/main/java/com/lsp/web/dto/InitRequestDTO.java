@@ -13,6 +13,18 @@ public class InitRequestDTO {
 	private String accountNumber;
 	private String vpa;
 	private String settlementAmount;
+	
+	private String mobileNumber;
+    private Integer stage;
+    private String productName;//this is used to save the product name in apply record
+    
+    //bank details form Data
+    private String formType;//this will be 1. Bank Details 2. Emandate 3. Loan Aggrement
+    private String accountname;
+    private String accountType;
+    private String IFSC;
+//    private String accountNumber;
+	
 	public String getTransactionId() {
 		return transactionId;
 	}
@@ -79,5 +91,47 @@ public class InitRequestDTO {
 	public void setSettlementAmount(String settlementAmount) {
 		this.settlementAmount = settlementAmount;
 	}
-
+	public String getMobileNumber() {
+		return mobileNumber;
+	}
+	public void setMobileNumber(String mobileNumber) {
+		this.mobileNumber = mobileNumber;
+	}
+	public Integer getStage() {
+		return stage;
+	}
+	public void setStage(Integer stage) {
+		this.stage = stage;
+	}
+	public String getProductName() {
+		return productName;
+	}
+	public void setProductName(String productName) {
+		this.productName = productName;
+	}
+	public String getFormType() {
+		return formType;
+	}
+	public void setFormType(String formType) {
+		this.formType = formType;
+	}
+	public String getAccountname() {
+		return accountname;
+	}
+	public void setAccountname(String accountname) {
+		this.accountname = accountname;
+	}
+	public String getAccountType() {
+		return accountType;
+	}
+	public void setAccountType(String accountType) {
+		this.accountType = accountType;
+	}
+	public String getIFSC() {
+		return IFSC;
+	}
+	public void setIFSC(String iFSC) {
+		IFSC = iFSC;
+	}
+	
 }
